@@ -18,7 +18,6 @@
 10. [Security](#security)
 11. [Vulnerability notifications](#vulnerability-notifications)
 12. [Open points](#open-points)
-13. [Immediate actions](#immediate-actions)
 
 ## Goal and principles
 
@@ -203,9 +202,3 @@ Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenClou
 - [ ] Full disaster recovery drill (Debian from scratch in a lab VM, playbook, restore, service checks) with a runbook and measured times: frequency and procedure.
 - [ ] Alerts for jobs that do not run (backup, ClamAV scan, Renovate) through Uptime Kuma push monitors, plus certificate expiry monitors.
 - [ ] Protecting Semaphore, which has root access to production: location (management VLAN), updates, access; ability to run the playbook from the laptop, and a mirror of the git repository if it is hosted in the lab.
-
-## Immediate actions
-
-- [ ] Revoke the Telegram bot token via BotFather: it is stored in plain text in `vars/vault.yml`.
-- [ ] Generate the new token and store it only in an encrypted vault.
-- [ ] Check whether the plain-text vault was ever committed and, if so, clean the history.
