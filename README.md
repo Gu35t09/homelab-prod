@@ -1,6 +1,6 @@
 # Production homelab – Project decisions
 
-> Last updated: 2026-10-18 · Author: Mattia Vallortigara
+> Last updated: 2026-10-24 · Author: Mattia Vallortigara
 >
 > Living document: records the decisions taken and the open points for the new production infrastructure.
 
@@ -177,26 +177,23 @@ The main risk is the exposed web apps, not the operating system: defences focus 
 
 ## Vulnerability notifications
 
-Every technology in use must have a source of security alerts that reaches Telegram or email, without relying on cloud services where possible.
+Every technology in use must have a source of security alerts that reaches Telegram or email, without relying on cloud services where possible, and without adding infrastructure: each extra tool is one more thing for a single person to maintain.
 
 | Layer | Tool | How the alert arrives |
 | --- | --- | --- |
-| Debian packages | debsecan + debian-security-announce list | Scheduled report from Semaphore, email for DSAs |
-| Container images | Trivy (or Grype) on the images in use | Weekly scan from Semaphore, summary on Telegram |
-| Applications (Traefik, Vaultwarden, Immich, OpenCloud, Paperless, Technitium) | Project GitHub repositories: *Watch → Custom → Releases*, plus the Security advisories page; Renovate PRs flag every new release | GitHub email or RSS feed |
+| Debian packages | `unattended-upgrades` (security updates applied daily) + debian-security-announce list | Email for DSAs |
+| Applications and their images (Traefik, Vaultwarden, Immich, OpenCloud, Paperless, Technitium) | Project GitHub repositories: *Watch → Custom → Releases* and *Security alerts*; Renovate PRs flag every new release | GitHub email |
 | OPNsense | Built-in firmware security audit + release announcements | Scheduled check, mailing list |
 | ClamAV, Docker, Libreboot | GitHub repositories (Cisco-Talos/clamav, moby/moby) and Libreboot announcements | Email |
 
-Trivy runs outside the production server: it downloads its database from the Internet, which keeps the server's egress minimal.
+Dropped for simplicity on 24 October 2026: Trivy/Grype image scans, debsecan reports and a self-hosted RSS reader. Renovate, GitHub release and advisory emails, and `unattended-upgrades` cover the same ground with no extra components. Remote logging and a full file-integrity database (AIDE) are not planned for now; the server runs targeted integrity checks and a nightly YARA scan instead (see ansible-prod-srv).
 
 ## Open points
 
-Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected.
+Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now.
 
 - [ ] Backup tool (restic, borg, kopia) and off-site destination.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
-- [ ] Where to run Trivy (Semaphore host or lab).
-- [ ] Application vulnerabilities: GitHub email notifications or `releases.atom` feeds in a self-hosted RSS reader (OpenCVE rejected because of its BSL license).
 - [ ] Final list of outbound destinations, after the first deployment.
 - [ ] Offline copy of the emergency secrets (backup repository password, Ansible Vault password, Cloudflare token) and periodic encrypted Vaultwarden export: where and how to store them outside the infrastructure.
 - [ ] Full disaster recovery drill (Debian from scratch in a lab VM, playbook, restore, service checks) with a runbook and measured times: frequency and procedure.
