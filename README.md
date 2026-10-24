@@ -96,7 +96,7 @@ Disk health and free space, critical with a single disk:
 
 ## Services
 
-Seven services on the server, behind Traefik. None is publicly exposed. Image versions always pinned in the repository, never `:latest`.
+Six services on the server, behind Traefik, plus Uptime Kuma outside it. None is publicly exposed. Image versions always pinned in the repository, never `:latest`.
 
 | Service | Domain | Notes |
 | --- | --- | --- |
@@ -124,6 +124,7 @@ Outbound destinations to allow (FQDN aliases on OPNsense):
 | Destination | Purpose |
 | --- | --- |
 | deb.debian.org, security.debian.org | System updates |
+| download.docker.com | Docker packages |
 | registry-1.docker.io, auth.docker.io, production.cloudflare.docker.com | Docker Hub image pulls |
 | ghcr.io, pkg-containers.githubusercontent.com | GitHub image pulls (e.g. Immich) |
 | database.clamav.net | ClamAV signatures (freshclam) |
@@ -150,7 +151,7 @@ Backup is the project's priority: Ansible rebuilds the configuration, but only t
 
 The current playbook (designed for Alpine) is restructured into roles for Debian, keeping the parts that already work: anti-lockout asserts, validated sshd drop-in, secrets in Ansible Vault.
 
-Planned roles: `base`, `hardening`, `firewall-host` (nftables), `containers`, one role per application, `backup`.
+Roles in place: `base`, `hardening`, `network` (VLANs and source routing), `firewall_host` (nftables), `docker_rootless`, `notify` (Telegram), `clamav`, `monitoring` (SMART, disk space), `integrity`, `yara`, `backup` (restic), `update_os`. Still to come: one role per application.
 
 | Tag | What it does | Run in Semaphore |
 | --- | --- | --- |
@@ -178,6 +179,7 @@ The main risk is the exposed web apps, not the operating system: defences focus 
 4. Key-only SSH, `AllowUsers` limited to the admin user, root disabled.
 5. Host firewall with nftables in addition to OPNsense; outbound Internet blocked except for allowed destinations; management and services on separate VLANs.
 6. Cloudflare token limited to *Zone → DNS → Edit* on the single zone in use. Secrets always encrypted with Ansible Vault; pre-commit hook that rejects an unencrypted `vault.yml`.
+7. Detection on the server: a check every 15 minutes for the traces of OpenSSH backdoors such as Ebury (NTP off, sshd logging lowered, unpackaged or setuid libraries, preloaded libraries) and a nightly YARA scan, both reporting to Telegram.
 
 ## Vulnerability notifications
 
@@ -199,7 +201,7 @@ Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenClou
 - [ ] S3 provider for the off-site copy (e.g. Backblaze B2, Hetzner, Wasabi), with object lock or versioning.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
 - [ ] Final list of outbound destinations, after the first deployment.
-- [ ] Offline copy of the emergency secrets (backup repository password, Ansible Vault password, Cloudflare token) and periodic encrypted Vaultwarden export: where and how to store them outside the infrastructure.
+- [ ] Offline copy of the emergency secrets (backup repository password, Ansible Vault password, Cloudflare token; the S3 key can be regenerated at the provider) and periodic encrypted Vaultwarden export: where and how to store them outside the infrastructure.
 - [ ] Full disaster recovery drill (Debian from scratch in a lab VM, playbook, restore, service checks) with a runbook and measured times: frequency and procedure.
 - [ ] Alerts for jobs that do not run (backup, ClamAV scan, Renovate) through Uptime Kuma push monitors, plus certificate expiry monitors.
 - [ ] Protecting Semaphore, which has root access to production: location (management VLAN), updates, access; ability to run the playbook from the laptop, and a mirror of the git repository if it is hosted in the lab.
