@@ -102,7 +102,7 @@ Six services on the server, behind Traefik, plus Uptime Kuma outside it. None is
 
 | Service | Domain | Notes |
 | --- | --- | --- |
-| Traefik | traefik.example.com | Reverse proxy, Let's Encrypt with Cloudflare DNS challenge |
+| Traefik | proxy.greyroom.net | Reverse proxy; one Let's Encrypt wildcard certificate for `*.greyroom.net` (Cloudflare DNS challenge); routes from files written by Ansible, no Docker socket |
 | Vaultwarden | vault.example.com | Critical: reachable only via WireGuard |
 | Immich | photo.example.com | Frequent breaking changes: update after reading the changelogs |
 | OpenCloud | cloud.example.com | File sync only; lighter than Nextcloud (no PHP, no external database) |
@@ -180,7 +180,7 @@ The main risk is the exposed web apps, not the operating system: defences focus 
 3. Automatic system security updates (`unattended-upgrades`).
 4. Key-only SSH, `AllowUsers` limited to the admin user, root disabled.
 5. Host firewall with nftables in addition to OPNsense; outbound Internet blocked except for allowed destinations; management and services on separate VLANs.
-6. Cloudflare token limited to *Zone → DNS → Edit* on the single zone in use. Secrets always encrypted with Ansible Vault; pre-commit hook that rejects an unencrypted `vault.yml`.
+6. Cloudflare token limited to the single zone in use, with *Zone → Zone → Read* and *Zone → DNS → Edit* (both needed by Traefik's ACME client). Secrets always encrypted with Ansible Vault; pre-commit hook that rejects an unencrypted `vault.yml`.
 7. Detection on the server: a check every 15 minutes for the traces of OpenSSH backdoors such as Ebury (NTP off, sshd logging lowered, unpackaged or setuid libraries, preloaded libraries) and a nightly YARA scan, both reporting to Telegram.
 
 ## Vulnerability notifications
@@ -198,7 +198,7 @@ Dropped for simplicity on 24 October 2026: Trivy/Grype image scans, debsecan rep
 
 ## Open points
 
-Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications.
+Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications. Traefik: domain greyroom.net with a wildcard certificate (internal names stay out of the Certificate Transparency logs), file provider only, no access to the Docker socket.
 
 - [ ] S3 provider for the off-site copy (e.g. Backblaze B2, Hetzner, Wasabi), with object lock or versioning.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
