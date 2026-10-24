@@ -79,6 +79,8 @@ systemd's attack surface was assessed and considered a minor risk: its component
 
 **Container runtime**: rootless Docker, considered more polished than Podman and compatible with the official compose files. It runs under a dedicated service user, with no login and separate from `admin_user`, so access to the socket is not tied to the administrative account.
 
+**Container layout**: one directory per service, with its compose file, data and database dumps. Infrastructure (Traefik, Technitium, Renovate) goes under `/srv/docker/system/<name>`, applications (Vaultwarden, Immich, OpenCloud, Paperless) under `/srv/docker/app/<name>`.
+
 **Image updates**: Tugtainer rejected, because with exact pinned versions it does not detect new releases. Choice: self-hosted Renovate on the Ansible repository, which reads the pinned versions and opens a PR with the changelog for each new release; after merging, the update is applied with the `update-containers` tag. It runs as a scheduled job on the production server using the open source `renovate/renovate` image (AGPL-3.0), not the Mend CE/EE editions, which are closed source.
 
 Major database upgrades (Postgres for Immich and Paperless) go in a separate Renovate group, handled manually: they require dump and restore, and Immich uses a specific Postgres image with vector extensions.
@@ -196,7 +198,7 @@ Dropped for simplicity on 24 October 2026: Trivy/Grype image scans, debsecan rep
 
 ## Open points
 
-Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports.
+Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications.
 
 - [ ] S3 provider for the off-site copy (e.g. Backblaze B2, Hetzner, Wasabi), with object lock or versioning.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
