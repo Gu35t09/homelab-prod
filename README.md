@@ -42,11 +42,13 @@ flowchart TD
         srv["<b>Debian 13 server · OptiPlex #2</b><br/>Rootless Docker behind Traefik<br/>Vaultwarden, Immich, Paperless,<br/>OpenCloud, Technitium"]
     end
 
-    backup["<b>Off-site backup (3-2-1)</b>"]
+    usb["<b>USB disk</b><br/>local copy"]
+    backup["<b>S3 bucket</b><br/>off-site copy"]
 
     internet --> fw
     fw --> prod
-    srv -- "restic / borg / kopia" --> backup
+    srv -- "restic, encrypted" --> usb
+    srv -- "restic, encrypted" --> backup
 ```
 
 ## Hardware
@@ -128,7 +130,7 @@ Outbound destinations to allow (FQDN aliases on OPNsense):
 | api.telegram.org | Telegram notifications |
 | huggingface.co | Immich ML model downloads |
 | api.cloudflare.com, acme-v02.api.letsencrypt.org | Let's Encrypt certificates via Cloudflare DNS challenge |
-| Off-site backup destination | To be defined with the backup tool |
+| S3 endpoint of the backup bucket | Off-site backup (restic) |
 
 FQDN aliases are resolved periodically, but services behind CDNs change IPs often: occasional pull or download errors are to be expected. With Renovate on the server, the repository's git forge and github.com / api.github.com (for changelogs) are also needed. The list must be checked against the firewall logs during the first deployment.
 
@@ -136,8 +138,10 @@ FQDN aliases are resolved periodically, but services behind CDNs change IPs ofte
 
 Backup is the project's priority: Ansible rebuilds the configuration, but only the backup brings the data back. With a single disk in the server, it is also the only protection against a hardware failure.
 
-- 3-2-1 scheme: a local copy plus an off-site one (e.g. Backblaze B2, Hetzner Storage Box or a remote external disk).
-- Tool: restic, borg or kopia (to be chosen).
+- 3-2-1 scheme: the data on the server, a local copy on an external USB disk and an off-site copy in an S3 bucket.
+- Tool: **restic** (Debian package, encryption built in, S3 and local disk with no extra components). Both copies are encrypted with the same password, kept on the emergency sheet.
+- The USB disk is mounted only while the backup runs; the bucket has object lock or versioning, because the server's key can delete objects.
+- Telegram message at every run, with the result of each copy.
 - Consistent dumps of the Postgres databases (Immich, Paperless) before each backup.
 - Versioned backup of the OPNsense configuration.
 - Periodic automated restore test with the `backup-verify` tag in Semaphore.
@@ -190,9 +194,9 @@ Dropped for simplicity on 24 October 2026: Trivy/Grype image scans, debsecan rep
 
 ## Open points
 
-Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now.
+Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports.
 
-- [ ] Backup tool (restic, borg, kopia) and off-site destination.
+- [ ] S3 provider for the off-site copy (e.g. Backblaze B2, Hetzner, Wasabi), with object lock or versioning.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
 - [ ] Final list of outbound destinations, after the first deployment.
 - [ ] Offline copy of the emergency secrets (backup repository password, Ansible Vault password, Cloudflare token) and periodic encrypted Vaultwarden export: where and how to store them outside the infrastructure.
