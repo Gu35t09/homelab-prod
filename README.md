@@ -1,6 +1,6 @@
 # Production homelab – Project decisions
 
-> Last updated: 2026-10-24 · Author: Mattia Vallortigara
+> Last updated: 2026-11-08 · Author: Mattia Vallortigara
 >
 > Living document: records the decisions taken and the open points for the new production infrastructure.
 
@@ -39,7 +39,7 @@ flowchart TD
     fw["<b>OPNsense firewall</b><br/>OptiPlex #1 · WireGuard, Unbound DNS"]
 
     subgraph prod["Production · management + services VLANs"]
-        srv["<b>Debian 13 server · OptiPlex #2</b><br/>Rootless Docker behind Traefik<br/>Vaultwarden, Immich, Paperless,<br/>OpenCloud, Technitium"]
+        srv["<b>Debian 13 server · OptiPlex #2</b><br/>Rootless Docker behind Traefik<br/>Vaultwarden, Immich, Paperless,<br/>OpenCloud"]
     end
 
     usb["<b>USB disk</b><br/>local copy"]
@@ -79,7 +79,7 @@ systemd's attack surface was assessed and considered a minor risk: its component
 
 **Container runtime**: rootless Docker, considered more polished than Podman and compatible with the official compose files. It runs under a dedicated service user, with no login and separate from `admin_user`, so access to the socket is not tied to the administrative account.
 
-**Container layout**: one directory per service, with its compose file, data and database dumps. Infrastructure (Traefik, Technitium, Renovate) goes under `/srv/docker/system/<name>`, applications (Vaultwarden, Immich, OpenCloud, Paperless) under `/srv/docker/app/<name>`.
+**Container layout**: one directory per service, with its compose file, data and database dumps. Infrastructure (Traefik, Renovate) goes under `/srv/docker/system/<name>`, applications (Vaultwarden, Immich, OpenCloud, Paperless) under `/srv/docker/app/<name>`.
 
 **Image updates**: Tugtainer rejected, because with exact pinned versions it does not detect new releases. Choice: self-hosted Renovate on the Ansible repository, which reads the pinned versions and opens a PR with the changelog for each new release; after merging, the update is applied with the `update-containers` tag. It runs as a scheduled job on the production server using the open source `renovate/renovate` image (AGPL-3.0), not the Mend CE/EE editions, which are closed source.
 
@@ -87,8 +87,8 @@ Major database upgrades (Postgres for Immich and Paperless) go in a separate Ren
 
 Rootless considerations:
 
-- Ports below 1024 (53, 80, 443): `net.ipv4.ip_unprivileged_port_start=53` via sysctl.
-- The real source IP is required for Traefik and Technitium: rootlesskit port driver `slirp4netns` (or `pasta` with the implicit port driver) instead of the default `builtin`, which does not preserve it.
+- Ports below 1024 (80, 443, Traefik only): `net.ipv4.ip_unprivileged_port_start=80` via sysctl.
+- The real source IP is required for Traefik, which logs it and passes it to the services (`X-Real-Ip`, e.g. Vaultwarden's failed logins): rootlesskit port driver `slirp4netns` (or `pasta` with the implicit port driver) instead of the default `builtin`, which does not preserve it.
 - No hardware transcoding for Immich: `/dev/dri` is not exposed.
 
 Disk health and free space, critical with a single disk:
@@ -98,27 +98,26 @@ Disk health and free space, critical with a single disk:
 
 ## Services
 
-Six services on the server, behind Traefik, plus Uptime Kuma outside it. None is publicly exposed. Image versions always pinned in the repository, never `:latest`.
+Five services on the server, behind Traefik, plus Uptime Kuma outside it. None is publicly exposed. Image versions always pinned in the repository, never `:latest`.
 
 | Service | Domain | Notes |
 | --- | --- | --- |
 | Traefik | proxy.greyroom.net | Reverse proxy; one Let's Encrypt wildcard certificate for `*.greyroom.net` (Cloudflare DNS challenge); routes from files written by Ansible, no Docker socket |
-| Vaultwarden | vault.example.com | Critical: reachable only via WireGuard |
-| Immich | photo.example.com | Frequent breaking changes: update after reading the changelogs |
-| OpenCloud | cloud.example.com | File sync only; lighter than Nextcloud (no PHP, no external database) |
-| Paperless | document.example.com | Postgres database to include in the dumps |
-| Technitium | dns.example.com | Forwards to Unbound: with egress blocked it cannot resolve recursively |
-| Uptime Kuma | health.example.com | Outside the server it monitors, preferably on-prem (options to evaluate) |
+| Vaultwarden | vault.greyroom.net | Critical: reachable only via WireGuard. SQLite; on its internal network only, so no Internet access (no favicons, no e-mail); sign-ups off, admin page disabled |
+| Immich | photo.greyroom.net | Frequent breaking changes: update after reading the changelogs |
+| OpenCloud | cloud.greyroom.net | File sync only; lighter than Nextcloud (no PHP, no external database) |
+| Paperless | document.greyroom.net | Postgres database to include in the dumps |
+| Uptime Kuma | health.greyroom.net | Outside the server it monitors, preferably on-prem (options to evaluate) |
 
 ## Network, DNS and remote access
 
 No service is exposed to the Internet: remote access goes only through WireGuard on OPNsense. The server cannot browse: it can only reach the destinations allowed on OPNsense.
 
 - Separate VLANs on the managed switch: server management (SSH, Ansible, Semaphore), container services, lab, home clients.
-- The server has a single NIC on an 802.1Q trunk, with one IP per VLAN. sshd listens only on the management IP; Traefik and Technitium publish their ports only on the services IP.
+- The server has a single NIC on an 802.1Q trunk, with one IP per VLAN. sshd listens only on the management IP; Traefik publishes its ports only on the services IP.
 - The server needs source-based routing (`ip rule`): replies from the management IP must leave through the management VLAN, otherwise OPNsense drops the asymmetric traffic.
 - The lab reaches neither management nor production services, except for explicit exceptions.
-- DNS: Unbound on OPNsense as the main resolver; Technitium forwards to Unbound. NTP also goes through OPNsense.
+- DNS: Unbound on OPNsense is the only resolver; the internal names (`<service>.greyroom.net` → services IP) are host overrides in Unbound. NTP also goes through OPNsense.
 - Uptime Kuma: outside the server, preferring on-prem solutions (options to evaluate).
 
 Outbound destinations to allow (FQDN aliases on OPNsense):
@@ -127,7 +126,7 @@ Outbound destinations to allow (FQDN aliases on OPNsense):
 | --- | --- |
 | deb.debian.org, security.debian.org | System updates |
 | download.docker.com | Docker packages |
-| registry-1.docker.io, auth.docker.io, production.cloudflare.docker.com | Docker Hub image pulls |
+| registry-1.docker.io, auth.docker.io, production.cloudflare.docker.com, production.cloudfront.docker.com | Docker Hub image pulls (layers come from either CDN) |
 | ghcr.io, pkg-containers.githubusercontent.com | GitHub image pulls (e.g. Immich) |
 | database.clamav.net | ClamAV signatures (freshclam) |
 | api.telegram.org | Telegram notifications |
@@ -153,7 +152,7 @@ Backup is the project's priority: Ansible rebuilds the configuration, but only t
 
 The current playbook (designed for Alpine) is restructured into roles for Debian, keeping the parts that already work: anti-lockout asserts, validated sshd drop-in, secrets in Ansible Vault.
 
-Roles in place: `base`, `hardening`, `network` (VLANs and source routing), `firewall_host` (nftables), `docker_rootless`, `notify` (Telegram), `clamav`, `monitoring` (SMART, disk space), `integrity`, `yara`, `backup` (restic), `update_os`. Still to come: one role per application.
+Roles in place: `base`, `hardening`, `network` (VLANs and source routing), `firewall_host` (nftables), `docker_rootless`, `notify` (Telegram), `clamav`, `monitoring` (SMART, disk space), `integrity`, `yara`, `backup` (restic), `update_os`, `traefik`, `vaultwarden`. Still to come: Immich, OpenCloud, Paperless, Renovate.
 
 | Tag | What it does | Run in Semaphore |
 | --- | --- | --- |
@@ -190,7 +189,7 @@ Every technology in use must have a source of security alerts that reaches Teleg
 | Layer | Tool | How the alert arrives |
 | --- | --- | --- |
 | Debian packages | `unattended-upgrades` (security updates applied daily) + debian-security-announce list | Email for DSAs |
-| Applications and their images (Traefik, Vaultwarden, Immich, OpenCloud, Paperless, Technitium) | Project GitHub repositories: *Watch → Custom → Releases* and *Security alerts*; Renovate PRs flag every new release | GitHub email |
+| Applications and their images (Traefik, Vaultwarden, Immich, OpenCloud, Paperless) | Project GitHub repositories: *Watch → Custom → Releases* and *Security alerts*; Renovate PRs flag every new release | GitHub email |
 | OPNsense | Built-in firmware security audit + release announcements | Scheduled check, mailing list |
 | ClamAV, Docker, Libreboot | GitHub repositories (Cisco-Talos/clamav, moby/moby) and Libreboot announcements | Email |
 
@@ -198,7 +197,7 @@ Dropped for simplicity on 24 October 2026: Trivy/Grype image scans, debsecan rep
 
 ## Open points
 
-Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications. Traefik: domain greyroom.net with a wildcard certificate (internal names stay out of the Certificate Transparency logs), file provider only, no access to the Docker socket.
+Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications. Traefik: domain greyroom.net with a wildcard certificate (internal names stay out of the Certificate Transparency logs), file provider only, no access to the Docker socket. Decided on 8 November 2026: no Technitium, DNS stays on Unbound alone (one component less; host overrides cover the internal names); Vaultwarden with SQLite, only on its internal network (no Internet access), no admin page.
 
 - [ ] S3 provider for the off-site copy (e.g. Backblaze B2, Hetzner, Wasabi), with object lock or versioning.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
