@@ -104,7 +104,7 @@ Five services on the server, behind Traefik, plus Uptime Kuma outside it. None i
 | --- | --- | --- |
 | Traefik | proxy.greyroom.net | Reverse proxy; one Let's Encrypt wildcard certificate for `*.greyroom.net` (Cloudflare DNS challenge); routes from files written by Ansible, no Docker socket |
 | Vaultwarden | vault.greyroom.net | Critical: reachable only via WireGuard. SQLite; on its internal network only, so no Internet access (no favicons, no e-mail); sign-ups off, admin page disabled |
-| Immich | photo.greyroom.net | Frequent breaking changes: update after reading the changelogs |
+| Immich | photo.greyroom.net | Frequent breaking changes: update after reading the changelogs. No machine learning (RAM): no faces or smart search. No Internet access; the whole library is backed up, thumbnails included |
 | OpenCloud | cloud.greyroom.net | File sync only; lighter than Nextcloud (no PHP, no external database) |
 | Paperless | document.greyroom.net | Postgres database to include in the dumps |
 | Uptime Kuma | health.greyroom.net | Outside the server it monitors, preferably on-prem (options to evaluate) |
@@ -130,7 +130,6 @@ Outbound destinations to allow (FQDN aliases on OPNsense):
 | ghcr.io, pkg-containers.githubusercontent.com | GitHub image pulls (e.g. Immich) |
 | database.clamav.net | ClamAV signatures (freshclam) |
 | api.telegram.org | Telegram notifications |
-| huggingface.co | Immich ML model downloads |
 | api.cloudflare.com, acme-v02.api.letsencrypt.org | Let's Encrypt certificates via Cloudflare DNS challenge |
 | S3 endpoint of the backup bucket | Off-site backup (restic) |
 
@@ -152,7 +151,7 @@ Backup is the project's priority: Ansible rebuilds the configuration, but only t
 
 The current playbook (designed for Alpine) is restructured into roles for Debian, keeping the parts that already work: anti-lockout asserts, validated sshd drop-in, secrets in Ansible Vault.
 
-Roles in place: `base`, `hardening`, `network` (VLANs and source routing), `firewall_host` (nftables), `docker_rootless`, `notify` (Telegram), `clamav`, `monitoring` (SMART, disk space), `integrity`, `yara`, `backup` (restic), `update_os`, `traefik`, `vaultwarden`. Still to come: Immich, OpenCloud, Paperless, Renovate.
+Roles in place: `base`, `hardening`, `network` (VLANs and source routing), `firewall_host` (nftables), `docker_rootless`, `notify` (Telegram), `clamav`, `monitoring` (SMART, disk space), `integrity`, `yara`, `backup` (restic), `update_os`, `traefik`, `vaultwarden`, `immich`. Still to come: OpenCloud, Paperless, Renovate.
 
 | Tag | What it does | Run in Semaphore |
 | --- | --- | --- |
@@ -199,7 +198,7 @@ Dropped for simplicity on 24 October 2026: Trivy/Grype image scans, debsecan rep
 
 ## Open points
 
-Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications. Traefik: domain greyroom.net with a wildcard certificate (internal names stay out of the Certificate Transparency logs), file provider only, no access to the Docker socket. Decided on 8 November 2026: no Technitium, DNS stays on Unbound alone (one component less; host overrides cover the internal names); Vaultwarden with SQLite, only on its internal network (no Internet access), no admin page.
+Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications. Traefik: domain greyroom.net with a wildcard certificate (internal names stay out of the Certificate Transparency logs), file provider only, no access to the Docker socket. Decided on 8 November 2026: no Technitium, DNS stays on Unbound alone (one component less; host overrides cover the internal names); Vaultwarden with SQLite, only on its internal network (no Internet access), no admin page. Immich without the machine learning container (1.5–3 GB of RAM on an 8 GB server that also runs ClamAV; it can be added later with Hugging Face on the egress list), no Internet access for any of its containers, the whole library in the backup including thumbnails and transcoded videos (faster restore), and a 10-minute read timeout in Traefik for long video uploads.
 
 - [ ] S3 provider for the off-site copy (e.g. Backblaze B2, Hetzner, Wasabi), with object lock or versioning.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
