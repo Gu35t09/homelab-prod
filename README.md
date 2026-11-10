@@ -1,6 +1,6 @@
 # Production homelab – Project decisions
 
-> Last updated: 2026-11-08 · Author: Mattia Vallortigara
+> Last updated: 2026-11-10 · Author: Mattia Vallortigara
 >
 > Living document: records the decisions taken and the open points for the new production infrastructure.
 
@@ -79,11 +79,11 @@ systemd's attack surface was assessed and considered a minor risk: its component
 
 **Container runtime**: rootless Docker, considered more polished than Podman and compatible with the official compose files. It runs under a dedicated service user, with no login and separate from `admin_user`, so access to the socket is not tied to the administrative account.
 
-**Container layout**: one directory per service, with its compose file, data and database dumps. Infrastructure (Traefik, Renovate) goes under `/srv/docker/system/<name>`, applications (Vaultwarden, Immich, OpenCloud, Paperless) under `/srv/docker/app/<name>`.
+**Container layout**: one directory per service, with its compose file, data and database dumps. Infrastructure (Traefik) goes under `/srv/docker/system/<name>`, applications (Vaultwarden, Immich, OpenCloud, Paperless) under `/srv/docker/app/<name>`.
 
-**Image updates**: Tugtainer rejected, because with exact pinned versions it does not detect new releases. Choice: self-hosted Renovate on the Ansible repository, which reads the pinned versions and opens a PR with the changelog for each new release; after merging, the update is applied with the `update-containers` tag. It runs as a scheduled job on the production server using the open source `renovate/renovate` image (AGPL-3.0), not the Mend CE/EE editions, which are closed source.
+**Image updates**: Tugtainer rejected, because with exact pinned versions it does not detect new releases. Choice: self-hosted Renovate on the Ansible repository, which reads the pinned versions and opens a PR with the changelog for each new release; after merging, the update is applied with the `update-containers` tag. It runs every Saturday morning from a GitHub Actions workflow in the repository, using the open source `renovate/renovate` image (AGPL-3.0) — not the Mend CE/EE editions, which are closed source, nor the hosted Mend app — with the job's own short-lived `GITHUB_TOKEN`; a Telegram message lists the new PRs. Nothing is merged automatically.
 
-Major database upgrades (Postgres for Immich and Paperless) go in a separate Renovate group, handled manually: they require dump and restore, and Immich uses a specific Postgres image with vector extensions.
+Major database upgrades (Postgres for Immich and Paperless) are not proposed by Renovate and are handled manually: they require dump and restore, and Immich uses a specific Postgres image with vector extensions.
 
 Rootless considerations:
 
@@ -133,7 +133,7 @@ Outbound destinations to allow (FQDN aliases on OPNsense):
 | api.cloudflare.com, acme-v02.api.letsencrypt.org | Let's Encrypt certificates via Cloudflare DNS challenge |
 | S3 endpoint of the backup bucket | Off-site backup (restic) |
 
-FQDN aliases are resolved periodically, but services behind CDNs change IPs often: occasional pull or download errors are to be expected. With Renovate on the server, the repository's git forge and github.com / api.github.com (for changelogs) are also needed. The list must be checked against the firewall logs during the first deployment.
+FQDN aliases are resolved periodically, but services behind CDNs change IPs often: occasional pull or download errors are to be expected. The list must be checked against the firewall logs during the first deployment.
 
 ## Backup and restore
 
@@ -151,7 +151,7 @@ Backup is the project's priority: Ansible rebuilds the configuration, but only t
 
 The current playbook (designed for Alpine) is restructured into roles for Debian, keeping the parts that already work: anti-lockout asserts, validated sshd drop-in, secrets in Ansible Vault.
 
-Roles in place: `base`, `hardening`, `network` (VLANs and source routing), `firewall_host` (nftables), `docker_rootless`, `notify` (Telegram), `clamav`, `monitoring` (SMART, disk space), `integrity`, `yara`, `backup` (restic), `update_os`, `traefik`, `vaultwarden`, `immich`. Still to come: OpenCloud, Paperless, Renovate.
+Roles in place: `base`, `hardening`, `network` (VLANs and source routing), `firewall_host` (nftables), `docker_rootless`, `notify` (Telegram), `clamav`, `monitoring` (SMART, disk space), `integrity`, `yara`, `backup` (restic), `update_os`, `traefik`, `vaultwarden`, `immich`, plus Renovate in GitHub Actions. Still to come: OpenCloud, Paperless.
 
 | Tag | What it does | Run in Semaphore |
 | --- | --- | --- |
@@ -198,12 +198,12 @@ Dropped for simplicity on 24 October 2026: Trivy/Grype image scans, debsecan rep
 
 ## Open points
 
-Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications. Traefik: domain greyroom.net with a wildcard certificate (internal names stay out of the Certificate Transparency logs), file provider only, no access to the Docker socket. Decided on 8 November 2026: no Technitium, DNS stays on Unbound alone (one component less; host overrides cover the internal names); Vaultwarden with SQLite, only on its internal network (no Internet access), no admin page. Immich without the machine learning container (1.5–3 GB of RAM on an 8 GB server that also runs ClamAV; it can be added later with Hugging Face on the egress list), no Internet access for any of its containers, the whole library in the backup including thumbnails and transcoded videos (faster restore), and a 10-minute read timeout in Traefik for long video uploads.
+Decided on 18 October 2026: rootless Docker, VLANs on a managed switch, OpenCloud, a single disk, no public services, ClamAV kept, Let's Encrypt with Cloudflare DNS challenge, real source IP for the services, no hardware transcoding, Renovate for image updates. Tugtainer and OpenCVE rejected. Decided on 24 October 2026: vulnerability alerts through GitHub email, Renovate and Debian's channels only (no Trivy, debsecan or RSS reader); no remote logging or AIDE for now. Backup: restic to a USB disk and an S3 bucket, both encrypted, with Telegram reports. Container layout: `/srv/docker/system` for infrastructure, `/srv/docker/app` for applications. Traefik: domain greyroom.net with a wildcard certificate (internal names stay out of the Certificate Transparency logs), file provider only, no access to the Docker socket. Decided on 8 November 2026: no Technitium, DNS stays on Unbound alone (one component less; host overrides cover the internal names); Vaultwarden with SQLite, only on its internal network (no Internet access), no admin page. Immich without the machine learning container (1.5–3 GB of RAM on an 8 GB server that also runs ClamAV; it can be added later with Hugging Face on the egress list), no Internet access for any of its containers, the whole library in the backup including thumbnails and transcoded videos (faster restore), and a 10-minute read timeout in Traefik for long video uploads. Decided on 10 November 2026: Renovate runs in GitHub Actions instead of on the production server — no write token for the repository on the server, no egress to GitHub, no extra RAM, and GitHub reports failed runs (which also removes Renovate from the job alerts to build).
 
 - [ ] S3 provider for the off-site copy (e.g. Backblaze B2, Hetzner, Wasabi), with object lock or versioning.
 - [ ] Where to run Uptime Kuma, preferring on-prem solutions.
 - [ ] Final list of outbound destinations, after the first deployment.
 - [ ] Offline copy of the emergency secrets (backup repository password, Ansible Vault password, Cloudflare token; the S3 key can be regenerated at the provider) and periodic encrypted Vaultwarden export: where and how to store them outside the infrastructure.
 - [ ] Full disaster recovery drill (Debian from scratch in a lab VM, playbook, restore, service checks) with a runbook and measured times: frequency and procedure.
-- [ ] Alerts for jobs that do not run (backup, ClamAV scan, Renovate) through Uptime Kuma push monitors, plus certificate expiry monitors.
+- [ ] Alerts for jobs that do not run (backup, ClamAV scan) through Uptime Kuma push monitors, plus certificate expiry monitors.
 - [ ] Protecting Semaphore, which has root access to production: location (management VLAN), updates, access; ability to run the playbook from the laptop, and a mirror of the git repository if it is hosted in the lab.
